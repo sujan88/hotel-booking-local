@@ -1,0 +1,7 @@
+target/
+.idea/
+*.iml
+.env
+
+mock/*.sqlite3*
+__pycache__/

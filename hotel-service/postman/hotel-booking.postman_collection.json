@@ -1,0 +1,417 @@
+{
+  "info": {
+    "name": "Hotel booking saga - local simulator",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Start hotel-service on 9090. No real payment or notification. Run success folder in order; status may need a second GET. Preserve key/token/body for replays. Change dates/room for a new booking. AI chat requires an OpenAI key; direct service APIs do not."
+  },
+  "variable": [
+    {
+      "key": "hotelUrl",
+      "value": "http://localhost:9090"
+    },
+    {
+      "key": "aiUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "checkIn",
+      "value": "2027-01-01"
+    },
+    {
+      "key": "checkOut",
+      "value": "2027-01-02"
+    },
+    {
+      "key": "paymentMethodToken",
+      "value": ""
+    },
+    {
+      "key": "idempotencyKey",
+      "value": ""
+    },
+    {
+      "key": "reservationId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Success flow (run in order)",
+      "item": [
+        {
+          "name": "Set mode SUCCESS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{hotelUrl}}/simulator/mode",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"SUCCESS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Collect simulated payment method (starts a NEW booking key)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{hotelUrl}}/simulator/payment-methods"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Token collected', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('paymentMethodToken', pm.response.json().paymentMethodToken);",
+                  "pm.collectionVariables.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.unset('reservationId');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create reservation (replay this request to test idempotency)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{hotelUrl}}/reservations",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hotelId\": \"h1\",\n  \"roomId\": \"r1\",\n  \"checkIn\": \"{{checkIn}}\",\n  \"checkOut\": \"{{checkOut}}\",\n  \"guests\": 2,\n  \"guestName\": \"Alex Guest\",\n  \"guestEmail\": \"alex@example.com\",\n  \"paymentMethodToken\": \"{{paymentMethodToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Accepted or replayed', () => pm.expect([200,202]).to.include(pm.response.code));",
+                  "if(pm.response.json().reservationId) pm.collectionVariables.set('reservationId',pm.response.json().reservationId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get current reservation status (run again after a few seconds)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{hotelUrl}}/reservations/{{reservationId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Read current status', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Simulator summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{hotelUrl}}/simulator/summary"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Payment modes (choose BEFORE a new booking)",
+      "item": [
+        {
+          "name": "Set mode DECLINE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{hotelUrl}}/simulator/mode",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"DECLINE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Set mode COMMIT_THEN_TIMEOUT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{hotelUrl}}/simulator/mode",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"COMMIT_THEN_TIMEOUT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Set mode TIMEOUT_BEFORE_COMMIT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{hotelUrl}}/simulator/mode",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"TIMEOUT_BEFORE_COMMIT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Set mode PENDING",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{hotelUrl}}/simulator/mode",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"PENDING\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Set mode SUCCESS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{hotelUrl}}/simulator/mode",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"SUCCESS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Resolve PENDING payment as SUCCEEDED",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{hotelUrl}}/simulator/payments/pay_{{reservationId}}/resolve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUCCEEDED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Resolve PENDING payment as DECLINED",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{hotelUrl}}/simulator/payments/pay_{{reservationId}}/resolve",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DECLINED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. AI integration (use direct API OR chat for a new booking)",
+      "item": [
+        {
+          "name": "Create through AI service direct API (no model call)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{aiUrl}}/api/reservations",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hotelId\": \"h1\",\n  \"roomId\": \"r1\",\n  \"checkIn\": \"{{checkIn}}\",\n  \"checkOut\": \"{{checkOut}}\",\n  \"guests\": 2,\n  \"guestName\": \"Alex Guest\",\n  \"guestEmail\": \"alex@example.com\",\n  \"paymentMethodToken\": \"{{paymentMethodToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Read through AI service direct API",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{aiUrl}}/api/reservations/{{reservationId}}"
+          }
+        },
+        {
+          "name": "Chat: create via tool (requires valid OpenAI key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              },
+              {
+                "key": "Payment-Method-Token",
+                "value": "{{paymentMethodToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{aiUrl}}/api/chat",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Book hotel h1 room r1 from {{checkIn}} to {{checkOut}} for 2 guests, guest Alex Guest, alex@example.com.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const reservation = (body.reservations || []).find(r => r.reservationId);",
+                  "pm.test('Booking tool returned a structured reservation ID', () => pm.expect(reservation && reservation.reservationId).to.be.a('string').and.not.empty);",
+                  "if (reservation) pm.collectionVariables.set('reservationId', reservation.reservationId); else pm.collectionVariables.unset('reservationId');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chat: read existing reservation (requires valid OpenAI key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{aiUrl}}/api/chat",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Check the status of reservation {{reservationId}}.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
